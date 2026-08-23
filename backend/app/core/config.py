@@ -21,7 +21,10 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "nomic-embed-text"
 
     OPENROUTER_API_KEY: Optional[str] = None
-    OPENROUTER_MODEL: Optional[str] = "qwen/qwen-2.5-72b-instruct"
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_MODEL: str = "qwen/qwen-2.5-72b-instruct"
+    OPENROUTER_FALLBACK_MODEL: str = "google/gemma-4-31b-it:free"
+    OPENROUTER_VISION_MODEL: Optional[str] = None
 
     # PostgreSQL
     POSTGRES_URL: str = Field(
