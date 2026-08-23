@@ -18,13 +18,20 @@ class Neo4jClient:
     def __init__(self):
         self._driver: Optional[Driver] = None
         self._last_attempt: float = 0
+        self._last_error: Optional[str] = None
+
+    def _get_session_kwargs(self) -> Dict[str, Any]:
+        """Returns session kwargs. Omits database if set to 'neo4j' default for AuraDB compatibility."""
+        if settings.NEO4J_DATABASE and settings.NEO4J_DATABASE != "neo4j":
+            return {"database": settings.NEO4J_DATABASE}
+        return {}
 
     def connect(self):
         if not NEO4J_AVAILABLE:
+            self._last_error = "neo4j package not installed"
             return
         if not self._driver:
             now = time.time()
-            # Throttle connection retries to once every 2 seconds
             if now - self._last_attempt < 2.0:
                 return
             self._last_attempt = now
@@ -40,6 +47,7 @@ class Neo4jClient:
 
             connected = False
             last_exc = None
+            sess_kwargs = self._get_session_kwargs()
 
             for user_candidate in potential_users:
                 schemes = [uri]
@@ -52,10 +60,11 @@ class Neo4jClient:
                             scheme,
                             auth=(user_candidate, password)
                         )
-                        with driver.session(database=settings.NEO4J_DATABASE) as s:
+                        with driver.session(**sess_kwargs) as s:
                             s.run("RETURN 1")
                         self._driver = driver
                         connected = True
+                        self._last_error = None
                         logger.info(f"Successfully connected to Neo4j at {scheme} with user '{user_candidate}'")
                         break
                     except Exception as err:
@@ -64,6 +73,7 @@ class Neo4jClient:
                     break
 
             if not connected:
+                self._last_error = str(last_exc)
                 logger.warning(f"Neo4j offline at {uri}: {last_exc}")
                 self._driver = None
 
@@ -83,9 +93,10 @@ class Neo4jClient:
             if not self._driver:
                 self.connect()
             if not self._driver:
-                return {"status": "unhealthy", "uri": uri, "error": "Neo4j database offline or unreachable"}
+                return {"status": "unhealthy", "uri": uri, "error": self._last_error or "Neo4j database offline or unreachable"}
             
-            with self._driver.session(database=settings.NEO4J_DATABASE) as session:
+            sess_kwargs = self._get_session_kwargs()
+            with self._driver.session(**sess_kwargs) as session:
                 result = session.run("RETURN 1 AS num")
                 record = result.single()
                 if record and record["num"] == 1:
@@ -93,20 +104,23 @@ class Neo4jClient:
                 return {"status": "unhealthy", "uri": uri, "error": "Unexpected ping response"}
         except Exception as e:
             self._driver = None
+            self._last_error = str(e)
             return {"status": "unhealthy", "uri": uri, "error": str(e)}
 
     def execute_query(self, query: str, parameters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         if not self._driver:
             self.connect()
         if not self._driver:
-            raise RuntimeError("Neo4j driver connection is unavailable")
+            raise RuntimeError(f"Neo4j driver connection is unavailable: {self._last_error}")
         
         try:
-            with self._driver.session(database=settings.NEO4J_DATABASE) as session:
+            sess_kwargs = self._get_session_kwargs()
+            with self._driver.session(**sess_kwargs) as session:
                 result = session.run(query, parameters or {})
                 return [record.data() for record in result]
         except Exception as e:
             self._driver = None
+            self._last_error = str(e)
             raise e
 
 neo4j_client = Neo4jClient()
