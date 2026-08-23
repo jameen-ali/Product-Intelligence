@@ -32,28 +32,39 @@ class Neo4jClient:
             username = settings.NEO4J_USERNAME
             password = settings.NEO4J_PASSWORD
 
-            try:
-                try:
-                    self._driver = GraphDatabase.driver(
-                        uri,
-                        auth=(username, password)
-                    )
-                    with self._driver.session(database=settings.NEO4J_DATABASE) as s:
-                        s.run("RETURN 1")
-                except Exception as first_err:
-                    if uri.startswith("neo4j+s://"):
-                        fallback_uri = uri.replace("neo4j+s://", "neo4j+ssc://")
-                        self._driver = GraphDatabase.driver(
-                            fallback_uri,
-                            auth=(username, password)
+            potential_users = [username]
+            if "." in uri and "databases.neo4j.io" in uri:
+                subdomain = uri.split("://")[-1].split(".")[0]
+                if subdomain and subdomain not in potential_users:
+                    potential_users.append(subdomain)
+
+            connected = False
+            last_exc = None
+
+            for user_candidate in potential_users:
+                schemes = [uri]
+                if uri.startswith("neo4j+s://"):
+                    schemes.append(uri.replace("neo4j+s://", "neo4j+ssc://"))
+
+                for scheme in schemes:
+                    try:
+                        driver = GraphDatabase.driver(
+                            scheme,
+                            auth=(user_candidate, password)
                         )
-                        with self._driver.session(database=settings.NEO4J_DATABASE) as s:
+                        with driver.session(database=settings.NEO4J_DATABASE) as s:
                             s.run("RETURN 1")
-                    else:
-                        raise first_err
-                logger.info(f"Connected to Neo4j at {uri} (user={username})")
-            except Exception as e:
-                logger.warning(f"Neo4j offline at {uri} (user={username}): {e}")
+                        self._driver = driver
+                        connected = True
+                        logger.info(f"Successfully connected to Neo4j at {scheme} with user '{user_candidate}'")
+                        break
+                    except Exception as err:
+                        last_exc = err
+                if connected:
+                    break
+
+            if not connected:
+                logger.warning(f"Neo4j offline at {uri}: {last_exc}")
                 self._driver = None
 
     def close(self):
