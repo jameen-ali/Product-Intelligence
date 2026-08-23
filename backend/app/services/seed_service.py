@@ -135,12 +135,15 @@ def seed_demo_data(db: Session) -> None:
         sources_raw = p_spec.get("sources", [])
         if isinstance(sources_raw, list):
             for s_dict in sources_raw:
+                rank_val = s_dict.get("authority_rank", 5)
+                rank_int = int(str(rank_val)) if rank_val is not None else 5
+                
                 source = Source(
                     product_id=product.id,
                     type=s_dict["type"],
                     name=s_dict["name"],
                     url_or_path=s_dict["url_or_path"],
-                    authority_rank=s_dict["authority_rank"]
+                    authority_rank=rank_int
                 )
                 db.add(source)
                 db.commit()
@@ -151,7 +154,7 @@ def seed_demo_data(db: Session) -> None:
                     uuid.UUID(str(product.id)),
                     str(s_dict["type"]),
                     str(s_dict["name"]),
-                    int(s_dict.get("authority_rank", 5))
+                    rank_int
                 )
 
                 doc = Document(
@@ -176,96 +179,96 @@ def seed_demo_data(db: Session) -> None:
                 claims_raw = s_dict.get("claims", [])
                 if isinstance(claims_raw, list):
                     for c_spec in claims_raw:
-                attr = attr_map.get(str(c_spec["attr"]))
-                if not attr:
-                    continue
+                        attr = attr_map.get(str(c_spec["attr"]))
+                        if not attr:
+                            continue
 
-                graph.create_attribute_node(
-                    uuid.UUID(str(attr.id)),
-                    str(attr.name),
-                    str(attr.display_name),
-                    str(attr.unit_type) if attr.unit_type else None
-                )
-                graph.link_product_has_attribute(
-                    uuid.UUID(str(product.id)),
-                    uuid.UUID(str(attr.id))
-                )
+                        graph.create_attribute_node(
+                            uuid.UUID(str(attr.id)),
+                            str(attr.name),
+                            str(attr.display_name),
+                            str(attr.unit_type) if attr.unit_type else None
+                        )
+                        graph.link_product_has_attribute(
+                            uuid.UUID(str(product.id)),
+                            uuid.UUID(str(attr.id))
+                        )
 
-                claim = Claim(
-                    product_id=product.id,
-                    attribute_id=attr.id,
-                    source_id=source.id,
-                    document_id=doc.id,
-                    raw_value=c_spec["raw"],
-                    original_unit=c_spec["unit"],
-                    normalized_value=c_spec["norm"],
-                    normalized_unit=c_spec["norm_unit"],
-                    extraction_confidence=0.95,
-                    status=c_spec["status"]
-                )
-                db.add(claim)
-                db.commit()
-                db.refresh(claim)
+                        claim = Claim(
+                            product_id=product.id,
+                            attribute_id=attr.id,
+                            source_id=source.id,
+                            document_id=doc.id,
+                            raw_value=c_spec["raw"],
+                            original_unit=c_spec["unit"],
+                            normalized_value=c_spec["norm"],
+                            normalized_unit=c_spec["norm_unit"],
+                            extraction_confidence=0.95,
+                            status=c_spec["status"]
+                        )
+                        db.add(claim)
+                        db.commit()
+                        db.refresh(claim)
 
-                graph.create_claim_node(
-                    claim_id=uuid.UUID(str(claim.id)),
-                    attribute_id=uuid.UUID(str(attr.id)),
-                    raw_value=str(c_spec["raw"]),
-                    raw_unit=str(c_spec["unit"]) if c_spec.get("unit") else None,
-                    normalized_value=float(c_spec["norm"]) if c_spec.get("norm") is not None else None,
-                    normalized_unit=str(c_spec["norm_unit"]) if c_spec.get("norm_unit") else None,
-                    status=str(c_spec["status"]),
-                    extraction_confidence=0.95
-                )
+                        graph.create_claim_node(
+                            claim_id=uuid.UUID(str(claim.id)),
+                            attribute_id=uuid.UUID(str(attr.id)),
+                            raw_value=str(c_spec["raw"]),
+                            raw_unit=str(c_spec["unit"]) if c_spec.get("unit") else None,
+                            normalized_value=float(c_spec["norm"]) if c_spec.get("norm") is not None else None,
+                            normalized_unit=str(c_spec["norm_unit"]) if c_spec.get("norm_unit") else None,
+                            status=str(c_spec["status"]),
+                            extraction_confidence=0.95
+                        )
 
-                ev = Evidence(
-                    claim_id=claim.id,
-                    document_id=doc.id,
-                    text_snippet=c_spec["snippet"],
-                    page_number=1,
-                    section_header="Specifications",
-                    content_type="text"
-                )
-                db.add(ev)
-                db.commit()
-                db.refresh(ev)
+                        ev = Evidence(
+                            claim_id=claim.id,
+                            document_id=doc.id,
+                            text_snippet=c_spec["snippet"],
+                            page_number=1,
+                            section_header="Specifications",
+                            content_type="text"
+                        )
+                        db.add(ev)
+                        db.commit()
+                        db.refresh(ev)
 
-                graph.create_evidence_node(
-                    uuid.UUID(str(ev.id)),
-                    uuid.UUID(str(claim.id)),
-                    uuid.UUID(str(doc.id)),
-                    str(c_spec["snippet"]),
-                    1,
-                    "Specifications"
-                )
+                        graph.create_evidence_node(
+                            uuid.UUID(str(ev.id)),
+                            uuid.UUID(str(claim.id)),
+                            uuid.UUID(str(doc.id)),
+                            str(c_spec["snippet"]),
+                            1,
+                            "Specifications"
+                        )
 
-                # Index in Qdrant if available
-                try:
-                    import asyncio
-                    try:
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            vec = [0.0] * 384
-                        else:
-                            vec = loop.run_until_complete(embed_text(str(c_spec["snippet"])))
-                    except Exception:
-                        vec = [0.0] * 384
+                        # Index in Qdrant if available
+                        try:
+                            import asyncio
+                            try:
+                                loop = asyncio.get_event_loop()
+                                if loop.is_running():
+                                    vec = [0.0] * 384
+                                else:
+                                    vec = loop.run_until_complete(embed_text(str(c_spec["snippet"])))
+                            except Exception:
+                                vec = [0.0] * 384
 
-                    upsert_evidence(
-                        evidence_id=str(ev.id),
-                        embedding=vec,
-                        product_id=str(product.id),
-                        document_id=str(doc.id),
-                        source_id=str(source.id),
-                        claim_id=str(claim.id),
-                        page=1,
-                        attribute=str(attr.name),
-                        text_snippet=str(c_spec["snippet"])
-                    )
-                except Exception as q_err:
-                    logger.warning(f"Could not index evidence in Qdrant: {q_err}")
+                            upsert_evidence(
+                                evidence_id=str(ev.id),
+                                embedding=vec,
+                                product_id=str(product.id),
+                                document_id=str(doc.id),
+                                source_id=str(source.id),
+                                claim_id=str(claim.id),
+                                page=1,
+                                attribute=str(attr.name),
+                                text_snippet=str(c_spec["snippet"])
+                            )
+                        except Exception as q_err:
+                            logger.warning(f"Could not index evidence in Qdrant: {q_err}")
 
-                claims_by_attr.setdefault(str(attr.name), []).append((attr, claim))
+                        claims_by_attr.setdefault(str(attr.name), []).append((attr, claim))
 
         # 3. Create Decisions (Truth Attributes)
         for attr_name, pair_list in claims_by_attr.items():

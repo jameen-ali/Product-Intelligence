@@ -21,9 +21,10 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
 
     # Create Neo4j product node
     try:
+        p_id = uuid.UUID(str(db_product.id))
         graph.create_product_node(
-            db_product.id, str(db_product.name), db_product.model_number,
-            db_product.manufacturer, db_product.category
+            p_id, product.name, product.model_number,
+            product.manufacturer, product.category
         )
     except Exception as e:
         import logging
@@ -35,7 +36,7 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
         db_source = Source(
             product_id=db_product.id,
             type="datasheet",
-            name=f"{db_product.name} Technical Specification.pdf",
+            name=f"{product.name} Technical Specification.pdf",
             authority_rank=1
         )
         db.add(db_source)
@@ -43,7 +44,8 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
         db.refresh(db_source)
 
         try:
-            graph.create_source_node(db_source.id, db_product.id, str(db_source.type), str(db_source.name), int(db_source.authority_rank or 1))
+            s_id = uuid.UUID(str(db_source.id))
+            graph.create_source_node(s_id, p_id, "datasheet", f"{product.name} Technical Specification.pdf", 1)
         except Exception:
             pass
 
@@ -102,12 +104,13 @@ def add_source(product_id: UUID, source: SourceCreate, db: Session = Depends(get
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
+    rank = int(source.authority_rank or 5)
     db_source = Source(
         product_id=product_id,
         type=source.type,
         name=source.name,
         url_or_path=source.url_or_path,
-        authority_rank=source.authority_rank or 5,
+        authority_rank=rank,
     )
     db.add(db_source)
     db.commit()
@@ -115,8 +118,9 @@ def add_source(product_id: UUID, source: SourceCreate, db: Session = Depends(get
 
     # Create Neo4j source node
     try:
+        s_id = uuid.UUID(str(db_source.id))
         graph.create_source_node(
-            db_source.id, product_id, source.type, source.name, int(db_source.authority_rank or 5)
+            s_id, product_id, source.type, source.name, rank
         )
     except Exception:
         pass
