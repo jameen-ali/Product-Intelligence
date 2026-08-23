@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 class Neo4jClient:
     def __init__(self):
         self._driver: Optional[Driver] = None
-        self._last_attempt: float = 0
         self._last_error: Optional[str] = None
 
     def _get_session_kwargs(self) -> Dict[str, Any]:
@@ -35,11 +34,15 @@ class Neo4jClient:
             username = settings.NEO4J_USERNAME
             password = settings.NEO4J_PASSWORD
 
-            potential_users = [username]
+            potential_users = []
             if "." in uri and "databases.neo4j.io" in uri:
                 subdomain = uri.split("://")[-1].split(".")[0]
-                if subdomain and subdomain not in potential_users:
+                if subdomain:
                     potential_users.append(subdomain)
+            if username and username not in potential_users:
+                potential_users.append(username)
+            if "neo4j" not in potential_users:
+                potential_users.append("neo4j")
 
             connected = False
             last_exc = None
@@ -53,13 +56,15 @@ class Neo4jClient:
                     schemes.append(uri.replace("neo4j+s://", "bolt+ssc://"))
 
                 for scheme in schemes:
+                    driver = None
                     try:
                         driver = GraphDatabase.driver(
                             scheme,
                             auth=(user_candidate, password)
                         )
+                        driver.verify_connectivity()
                         with driver.session(**sess_kwargs) as s:
-                            s.run("RETURN 1")
+                            s.run("RETURN 1 AS health")
                         self._driver = driver
                         connected = True
                         self._last_error = None
@@ -67,12 +72,17 @@ class Neo4jClient:
                         break
                     except Exception as err:
                         last_exc = err
+                        if driver:
+                            try:
+                                driver.close()
+                            except Exception:
+                                pass
                 if connected:
                     break
 
             if not connected:
                 self._last_error = str(last_exc)
-                logger.warning(f"Neo4j offline at {uri}: {last_exc}")
+                logger.warning(f"Neo4j connection failed at {uri}: {last_exc}")
                 self._driver = None
 
     def close(self):
@@ -91,15 +101,17 @@ class Neo4jClient:
             if not self._driver:
                 self.connect()
             if not self._driver:
-                return {"status": "unhealthy", "uri": uri, "error": self._last_error or "Neo4j database offline or unreachable"}
+                return {"status": "unhealthy", "uri": uri, "error": self._last_error or "Neo4j driver connection is unavailable"}
             
+            self._driver.verify_connectivity()
+
             sess_kwargs = self._get_session_kwargs()
             with self._driver.session(**sess_kwargs) as session:
-                result = session.run("RETURN 1 AS num")
+                result = session.run("RETURN 1 AS health")
                 record = result.single()
-                if record and record["num"] == 1:
+                if record and record["health"] == 1:
                     return {"status": "healthy", "uri": uri}
-                return {"status": "unhealthy", "uri": uri, "error": "Unexpected ping response"}
+                return {"status": "unhealthy", "uri": uri, "error": "Unexpected health check response"}
         except Exception as e:
             self._driver = None
             self._last_error = str(e)
