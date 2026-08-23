@@ -37,6 +37,37 @@ def get_product(product_id: UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Product not found")
     return product
 
+@router.delete("/{product_id}", status_code=status.HTTP_200_OK)
+def delete_product(product_id: UUID, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    # 1. Delete from PostgreSQL (cascades to sources, claims, decisions, evidence, jobs)
+    db.delete(product)
+    db.commit()
+
+    # 2. Cleanup Neo4j graph nodes
+    try:
+        graph.delete_product_graph(product_id)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Neo4j product cleanup error for {product_id}: {e}")
+
+    # 3. Cleanup Qdrant vector index
+    try:
+        from app.retrieval import qdrant_service
+        qdrant_service.delete_product_vectors(str(product_id))
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Qdrant product cleanup error for {product_id}: {e}")
+
+    return {
+        "success": True,
+        "message": "Product deleted successfully",
+        "product_id": str(product_id)
+    }
+
 @router.post("/{product_id}/sources", response_model=SourceResponse, status_code=status.HTTP_201_CREATED)
 def add_source(product_id: UUID, source: SourceCreate, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()

@@ -38,6 +38,25 @@ def create_product_node(product_id: UUID, name: str, model_number: Optional[str]
         return False
 
 
+def delete_product_graph(product_id: UUID) -> bool:
+    """
+    Remove Product node and all connected provenance nodes (Attribute, Claim, Evidence, Document, Source)
+    belonging to this product from Neo4j graph.
+    """
+    query = """
+    MATCH (p:Product {id: $id})
+    OPTIONAL MATCH (p)-[*0..4]-(n)
+    DETACH DELETE p, n
+    """
+    try:
+        neo4j_client.execute_query(query, {"id": _safe_str(product_id)})
+        logger.info(f"Neo4j graph deleted for product {product_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Neo4j delete_product_graph failed: {e}")
+        return False
+
+
 def create_source_node(source_id: UUID, product_id: UUID, source_type: str,
                        name: str, authority_rank: int = 5) -> bool:
     query = """

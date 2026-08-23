@@ -146,6 +146,7 @@ export const api = {
     claims: (id: string) => fetchJSON<any[]>(`/products/${id}/claims`),
     evidence: (id: string) => fetchJSON<{ evidence: any[] }>(`/products/${id}/evidence`),
     graph: (id: string) => fetchJSON<GraphData>(`/products/${id}/graph`),
+    delete: (id: string) => fetchJSON<{ success: boolean; message: string; product_id: string }>(`/products/${id}`, { method: 'DELETE' }),
   },
 
   conflicts: {

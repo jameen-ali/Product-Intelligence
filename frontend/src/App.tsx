@@ -5,7 +5,7 @@ import {
   Download, Eye, X, BarChart2, Package,
   ArrowRight, Cpu, Search, Filter, ShieldCheck, Database,
   FileCheck, ShieldAlert, Sparkles, Server, Info, ExternalLink, Globe, Link, Check,
-  FileSpreadsheet, ScanLine
+  FileSpreadsheet, ScanLine, Trash2
 } from "lucide-react";
 import {
   api, Product, AttributeData, Source, GraphData, ConflictData,
@@ -264,7 +264,102 @@ function AttributeTruthTable({ attrs }: { attrs: AttributeData[] }) {
   );
 }
 
-function ProductWorkspace({ productId }: { productId: string }) {
+function DeleteProductModal({
+  product,
+  onClose,
+  onDeleted
+}: {
+  product: { id: string; name: string } | null;
+  onClose: () => void;
+  onDeleted: (deletedId: string) => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!product) return null;
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.products.delete(product.id);
+      onDeleted(product.id);
+      onClose();
+    } catch (err: any) {
+      setError("Unable to delete product. Please try again.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+      <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div className="flex items-center gap-2.5 text-rose-400">
+            <AlertTriangle className="w-5 h-5" />
+            <h3 className="text-base font-bold text-white">Delete Product?</h3>
+          </div>
+          <button onClick={onClose} disabled={deleting} className="text-slate-400 hover:text-white text-lg font-bold">
+            ×
+          </button>
+        </div>
+
+        <div className="space-y-3 text-xs text-slate-300">
+          <p>You are about to permanently delete:</p>
+          <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg font-bold text-white text-sm">
+            {product.name}
+          </div>
+          <p className="text-slate-400 leading-relaxed">
+            This will remove the product and its associated workspace data, sources, attributes, conflicts, and related provenance records.
+          </p>
+          <p className="text-rose-400 font-semibold">This action cannot be undone.</p>
+        </div>
+
+        {error && (
+          <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-300 font-medium">
+            {error}
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-3 pt-2">
+          <button
+            onClick={onClose}
+            disabled={deleting}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-md"
+          >
+            {deleting ? (
+              <>
+                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Deleting...
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete Product
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductWorkspace({
+  productId,
+  onDeleteClick
+}: {
+  productId: string;
+  onDeleteClick?: (product: { id: string; name: string }) => void;
+}) {
   const [product, setProduct] = useState<Product | null>(null);
   const [attrs, setAttrs] = useState<AttributeData[]>([]);
   const [sources, setSources] = useState<Source[]>([]);
@@ -366,9 +461,19 @@ function ProductWorkspace({ productId }: { productId: string }) {
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Truth Engine Quality Score</div>
             <div className="text-3xl font-bold font-mono text-white">{avgConf}%</div>
             <div className="text-xs text-slate-500">Average Confidence Score</div>
-            <button onClick={load} className="mt-3 p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors" title="Refresh Product Truth">
-              <RefreshCw className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2 mt-3">
+              <button onClick={load} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors" title="Refresh Product Truth">
+                <RefreshCw className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => onDeleteClick?.({ id: productId, name: product?.name || "Product" })}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-semibold transition-colors"
+                title="Delete Product"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete Product
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1265,6 +1370,18 @@ export default function App() {
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [newProductName, setNewProductName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [deleteTargetProduct, setDeleteTargetProduct] = useState<{ id: string; name: string } | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const handleProductDeleted = (deletedId: string) => {
+    setProducts(prev => prev.filter(p => p.id !== deletedId));
+    if (selectedProductId === deletedId) {
+      setSelectedProductId(null);
+      setActiveTab("dashboard");
+    }
+    setToastMessage("Product deleted successfully.");
+    setTimeout(() => setToastMessage(null), 4000);
+  };
 
   const loadHealth = useCallback(async () => {
     try {
@@ -1477,15 +1594,17 @@ export default function App() {
                   </div>
                   <div className="divide-y divide-slate-800">
                     {products.map(p => (
-                      <button
+                      <div
                         key={p.id}
-                        className={`w-full flex items-center justify-between px-5 py-4 hover:bg-slate-800/50 transition-colors text-left ${selectedProductId === p.id ? "bg-slate-800/30" : ""}`}
-                        onClick={() => {
-                          setSelectedProductId(p.id);
-                          setActiveTab("workspace");
-                        }}
+                        className={`w-full flex items-center justify-between px-5 py-4 hover:bg-slate-800/50 transition-colors ${selectedProductId === p.id ? "bg-slate-800/30" : ""}`}
                       >
-                        <div className="flex items-center gap-3">
+                        <div
+                          className="flex items-center gap-3 cursor-pointer flex-1"
+                          onClick={() => {
+                            setSelectedProductId(p.id);
+                            setActiveTab("workspace");
+                          }}
+                        >
                           <Package className="w-5 h-5 text-sky-400" />
                           <div>
                             <div className="text-sm font-bold text-white">{p.name}</div>
@@ -1496,10 +1615,28 @@ export default function App() {
                           </div>
                         </div>
                         <div className="flex items-center gap-3 text-xs text-slate-400">
-                          <span>Open Workspace</span>
+                          <button
+                            onClick={() => {
+                              setSelectedProductId(p.id);
+                              setActiveTab("workspace");
+                            }}
+                            className="text-xs text-slate-400 hover:text-sky-400 font-medium transition-colors"
+                          >
+                            Open Workspace
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteTargetProduct({ id: p.id, name: p.name });
+                            }}
+                            className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-colors"
+                            title="Delete Product"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                           <ChevronRight className="w-4 h-4 text-slate-500" />
                         </div>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -1517,7 +1654,12 @@ export default function App() {
             </div>
           )}
 
-          {activeTab === "workspace" && selectedProductId && <ProductWorkspace productId={selectedProductId} />}
+          {activeTab === "workspace" && selectedProductId && (
+            <ProductWorkspace
+              productId={selectedProductId}
+              onDeleteClick={(p) => setDeleteTargetProduct(p)}
+            />
+          )}
           {activeTab === "sources" && selectedProductId && <SourceManager productId={selectedProductId} />}
           {activeTab === "conflicts" && selectedProductId && <ConflictWorkspace productId={selectedProductId} />}
           {activeTab === "graph" && selectedProductId && <TruthGraph productId={selectedProductId} />}
@@ -1556,6 +1698,17 @@ export default function App() {
           )}
         </div>
       </main>
+      <DeleteProductModal
+        product={deleteTargetProduct}
+        onClose={() => setDeleteTargetProduct(null)}
+        onDeleted={handleProductDeleted}
+      />
+      {toastMessage && (
+        <div className="fixed bottom-5 right-5 z-50 px-4 py-3 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-2xl flex items-center gap-2 animate-bounce">
+          <CheckCircle2 className="w-4 h-4" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }

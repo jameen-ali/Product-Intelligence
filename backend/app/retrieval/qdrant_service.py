@@ -68,6 +68,37 @@ def upsert_evidence(
         return False
 
 
+def delete_product_vectors(product_id: str) -> bool:
+    """
+    Delete all vector points in Qdrant collection matching the product_id.
+    """
+    client = _get_client()
+    if not client:
+        logger.error("Qdrant client not available for delete_product_vectors")
+        return False
+
+    try:
+        from qdrant_client.http import models as qmodels
+        client.delete(
+            collection_name=COLLECTION_NAME,
+            points_selector=qmodels.FilterSelector(
+                filter=qmodels.Filter(
+                    must=[
+                        qmodels.FieldCondition(
+                            key="product_id",
+                            match=qmodels.MatchValue(value=str(product_id))
+                        )
+                    ]
+                )
+            )
+        )
+        logger.info(f"Qdrant vectors deleted for product_id {product_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Qdrant delete_product_vectors failed: {e}")
+        return False
+
+
 def search_evidence(
     product_id: str,
     query_embedding: list[float],
