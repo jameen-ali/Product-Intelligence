@@ -122,30 +122,42 @@ def seed_demo_data(db: Session) -> None:
 
         # Graph node
         graph.create_product_node(
-            product.id, product.name, product.model_number, product.manufacturer, product.category
+            uuid.UUID(str(product.id)),
+            str(product.name),
+            str(product.model_number) if product.model_number else None,
+            str(product.manufacturer) if product.manufacturer else None,
+            str(product.category) if product.category else None
         )
 
         claims_by_attr: Dict[str, list] = {}
 
         # 2. Add Sources, Documents, Claims, Evidence
-        for s_spec in p_spec["sources"]:
+        sources_list: list = p_spec["sources"]
+        for s_spec in sources_list:
+            s_dict: dict = s_spec
             source = Source(
                 product_id=product.id,
-                type=s_spec["type"],
-                name=s_spec["name"],
-                url_or_path=s_spec["url_or_path"],
-                authority_rank=s_spec["authority_rank"]
+                type=s_dict["type"],
+                name=s_dict["name"],
+                url_or_path=s_dict["url_or_path"],
+                authority_rank=s_dict["authority_rank"]
             )
             db.add(source)
             db.commit()
             db.refresh(source)
 
-            graph.create_source_node(source.id, product.id, source.type, source.name, source.authority_rank)
+            graph.create_source_node(
+                uuid.UUID(str(source.id)),
+                uuid.UUID(str(product.id)),
+                str(s_dict["type"]),
+                str(s_dict["name"]),
+                int(s_dict.get("authority_rank", 5))
+            )
 
             doc = Document(
                 source_id=source.id,
                 file_hash=uuid.uuid4().hex,
-                file_type=s_spec["type"],
+                file_type=s_dict["type"],
                 content_length=1024,
                 parsed_metadata={"seeded": True}
             )
@@ -153,15 +165,31 @@ def seed_demo_data(db: Session) -> None:
             db.commit()
             db.refresh(doc)
 
-            graph.create_document_node(doc.id, source.id, source.name, 1, doc.file_hash)
+            graph.create_document_node(
+                uuid.UUID(str(doc.id)),
+                uuid.UUID(str(source.id)),
+                str(s_dict["name"]),
+                1,
+                str(doc.file_hash)
+            )
 
-            for c_spec in s_spec["claims"]:
-                attr = attr_map.get(c_spec["attr"])
+            claims_list_spec: list = s_dict["claims"]
+            for c_spec_raw in claims_list_spec:
+                c_spec: dict = c_spec_raw
+                attr = attr_map.get(str(c_spec["attr"]))
                 if not attr:
                     continue
 
-                graph.create_attribute_node(attr.id, attr.name, attr.display_name, attr.unit_type)
-                graph.link_product_has_attribute(product.id, attr.id)
+                graph.create_attribute_node(
+                    uuid.UUID(str(attr.id)),
+                    str(attr.name),
+                    str(attr.display_name),
+                    str(attr.unit_type) if attr.unit_type else None
+                )
+                graph.link_product_has_attribute(
+                    uuid.UUID(str(product.id)),
+                    uuid.UUID(str(attr.id))
+                )
 
                 claim = Claim(
                     product_id=product.id,
@@ -180,9 +208,14 @@ def seed_demo_data(db: Session) -> None:
                 db.refresh(claim)
 
                 graph.create_claim_node(
-                    claim.id, attr.id, claim.raw_value, claim.original_unit,
-                    claim.normalized_value, claim.normalized_unit, claim.status,
-                    claim.extraction_confidence
+                    claim_id=uuid.UUID(str(claim.id)),
+                    attribute_id=uuid.UUID(str(attr.id)),
+                    raw_value=str(c_spec["raw"]),
+                    raw_unit=str(c_spec["unit"]) if c_spec.get("unit") else None,
+                    normalized_value=float(c_spec["norm"]) if c_spec.get("norm") is not None else None,
+                    normalized_unit=str(c_spec["norm_unit"]) if c_spec.get("norm_unit") else None,
+                    status=str(c_spec["status"]),
+                    extraction_confidence=0.95
                 )
 
                 ev = Evidence(
@@ -198,7 +231,12 @@ def seed_demo_data(db: Session) -> None:
                 db.refresh(ev)
 
                 graph.create_evidence_node(
-                    ev.id, claim.id, doc.id, ev.text_snippet, ev.page_number, ev.section_header
+                    uuid.UUID(str(ev.id)),
+                    uuid.UUID(str(claim.id)),
+                    uuid.UUID(str(doc.id)),
+                    str(c_spec["snippet"]),
+                    1,
+                    "Specifications"
                 )
 
                 # Index in Qdrant if available
@@ -209,7 +247,7 @@ def seed_demo_data(db: Session) -> None:
                         if loop.is_running():
                             vec = [0.0] * 384
                         else:
-                            vec = loop.run_until_complete(embed_text(c_spec["snippet"]))
+                            vec = loop.run_until_complete(embed_text(str(c_spec["snippet"])))
                     except Exception:
                         vec = [0.0] * 384
 
@@ -221,13 +259,13 @@ def seed_demo_data(db: Session) -> None:
                         source_id=str(source.id),
                         claim_id=str(claim.id),
                         page=1,
-                        attribute=attr.name,
-                        text_snippet=ev.text_snippet
+                        attribute=str(attr.name),
+                        text_snippet=str(c_spec["snippet"])
                     )
                 except Exception as q_err:
                     logger.warning(f"Could not index evidence in Qdrant: {q_err}")
 
-                claims_by_attr.setdefault(attr.name, []).append((attr, claim))
+                claims_by_attr.setdefault(str(attr.name), []).append((attr, claim))
 
         # 3. Create Decisions (Truth Attributes)
         for attr_name, pair_list in claims_by_attr.items():
@@ -287,7 +325,13 @@ def seed_product_initial_attributes(db: Session, product: Product, source: Sourc
     db.refresh(doc)
 
     try:
-        graph.create_document_node(doc.id, source.id, source.name, 1, doc.file_hash)
+        graph.create_document_node(
+            uuid.UUID(str(doc.id)),
+            uuid.UUID(str(source.id)),
+            str(source.name),
+            1,
+            str(doc.file_hash)
+        )
     except Exception:
         pass
 
@@ -302,8 +346,9 @@ def seed_product_initial_attributes(db: Session, product: Product, source: Sourc
         {"attr": "weight", "raw": "38 kg", "unit": "kg", "norm": 38.0, "norm_unit": "kg", "snippet": "Net dry weight: 38 kg total mass.", "status": "INFERRED", "conf": 0.88},
     ]
 
-    for c_spec in standard_claims:
-        attr = attr_map.get(c_spec["attr"])
+    for c_spec_raw in standard_claims:
+        c_spec: dict = c_spec_raw
+        attr = attr_map.get(str(c_spec["attr"]))
         if not attr:
             continue
 
@@ -335,17 +380,25 @@ def seed_product_initial_attributes(db: Session, product: Product, source: Sourc
         db.commit()
 
         try:
-            graph.create_attribute_node(attr.id, str(attr.name), str(attr.display_name), attr.unit_type)
-            graph.link_product_has_attribute(product.id, attr.id)
+            graph.create_attribute_node(
+                uuid.UUID(str(attr.id)),
+                str(attr.name),
+                str(attr.display_name),
+                str(attr.unit_type) if attr.unit_type else None
+            )
+            graph.link_product_has_attribute(
+                uuid.UUID(str(product.id)),
+                uuid.UUID(str(attr.id))
+            )
             graph.create_claim_node(
-                claim_id=claim.id,
-                attribute_id=attr.id,
-                raw_value=str(claim.raw_value),
-                raw_unit=claim.original_unit,
-                normalized_value=claim.normalized_value,
-                normalized_unit=claim.normalized_unit,
-                status=str(claim.status),
-                extraction_confidence=float(claim.extraction_confidence or 0.9)
+                claim_id=uuid.UUID(str(claim.id)),
+                attribute_id=uuid.UUID(str(attr.id)),
+                raw_value=str(c_spec["raw"]),
+                raw_unit=str(c_spec["unit"]) if c_spec.get("unit") else None,
+                normalized_value=float(c_spec["norm"]) if c_spec.get("norm") is not None else None,
+                normalized_unit=str(c_spec["norm_unit"]) if c_spec.get("norm_unit") else None,
+                status=str(c_spec["status"]),
+                extraction_confidence=float(c_spec.get("conf", 0.9))
             )
         except Exception:
             pass
