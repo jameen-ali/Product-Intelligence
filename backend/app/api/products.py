@@ -1,3 +1,5 @@
+import logging
+import uuid
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -7,6 +9,7 @@ from app.models.entities import Product, Source
 from app.schemas.domain import ProductCreate, ProductResponse, SourceCreate, SourceResponse
 from app.graph import neo4j_service as graph
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/products", tags=["Products"])
 
 @router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
@@ -19,16 +22,16 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_product)
 
+    p_id = UUID(str(db_product.id))
+
     # Create Neo4j product node
     try:
-        p_id = uuid.UUID(str(db_product.id))
         graph.create_product_node(
             p_id, product.name, product.model_number,
             product.manufacturer, product.category
         )
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning(f"Neo4j create_product_node warning: {e}")
+        logger.warning(f"Neo4j create_product_node warning: {e}")
 
     # Seed default source and initial attribute claims for instant display
     try:
@@ -44,15 +47,14 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
         db.refresh(db_source)
 
         try:
-            s_id = uuid.UUID(str(db_source.id))
+            s_id = UUID(str(db_source.id))
             graph.create_source_node(s_id, p_id, "datasheet", f"{product.name} Technical Specification.pdf", 1)
         except Exception:
             pass
 
         seed_product_initial_attributes(db, db_product, db_source)
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning(f"Initial attribute seeding warning: {e}")
+        logger.warning(f"Initial attribute seeding warning: {e}")
 
     return db_product
 
@@ -81,16 +83,14 @@ def delete_product(product_id: UUID, db: Session = Depends(get_db)):
     try:
         graph.delete_product_graph(product_id)
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning(f"Neo4j product cleanup error for {product_id}: {e}")
+        logger.warning(f"Neo4j product cleanup error for {product_id}: {e}")
 
     # 3. Cleanup Qdrant vector index
     try:
         from app.retrieval import qdrant_service
         qdrant_service.delete_product_vectors(str(product_id))
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning(f"Qdrant product cleanup error for {product_id}: {e}")
+        logger.warning(f"Qdrant product cleanup error for {product_id}: {e}")
 
     return {
         "success": True,
@@ -104,7 +104,7 @@ def add_source(product_id: UUID, source: SourceCreate, db: Session = Depends(get
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    rank = int(source.authority_rank or 5)
+    rank = source.authority_rank or 5
     db_source = Source(
         product_id=product_id,
         type=source.type,
@@ -118,7 +118,7 @@ def add_source(product_id: UUID, source: SourceCreate, db: Session = Depends(get
 
     # Create Neo4j source node
     try:
-        s_id = uuid.UUID(str(db_source.id))
+        s_id = UUID(str(db_source.id))
         graph.create_source_node(
             s_id, product_id, source.type, source.name, rank
         )
