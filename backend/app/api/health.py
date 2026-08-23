@@ -9,8 +9,9 @@ from app.schemas.domain import HealthResponse, ComponentHealth
 
 router = APIRouter()
 
-@router.get("/health", response_model=HealthResponse)
+@router.get("/health")
 async def get_health():
+    commit_tag = "commit-8b3672f-v2"
     # 1. PostgreSQL
     pg_res = check_postgres_connection()
     pg_health = ComponentHealth(
@@ -78,6 +79,7 @@ async def get_health():
     return HealthResponse(
         status=overall_status,
         application=settings.PROJECT_NAME,
+        version=commit_tag,
         timestamp=datetime.now(timezone.utc),
         services={
             "postgresql": pg_health,

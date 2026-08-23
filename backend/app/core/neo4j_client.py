@@ -81,7 +81,7 @@ class Neo4jClient:
                     break
 
             if not connected:
-                self._last_error = str(last_exc)
+                self._last_error = f"Connection failed (candidates: {potential_users}): {last_exc}"
                 logger.warning(f"Neo4j connection failed at {uri}: {last_exc}")
                 self._driver = None
 

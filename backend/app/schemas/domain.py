@@ -12,6 +12,7 @@ class ComponentHealth(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     application: str
+    version: Optional[str] = None
     timestamp: datetime
     services: Dict[str, ComponentHealth]
 
