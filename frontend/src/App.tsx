@@ -300,9 +300,7 @@ function ProductWorkspace({ productId }: { productId: string }) {
       const formData = new FormData();
       formData.append("source_id", sources[0].id);
       formData.append("file", files[0]);
-      const res = await fetch(`http://localhost:8000/processing/products/${productId}/process`, { method: "POST", body: formData });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const result = await res.json();
+      const result = await api.processing.processPDF(productId, sources[0].id, files[0]);
       setProcessResult(result);
       await load();
     } catch(err: any) {
