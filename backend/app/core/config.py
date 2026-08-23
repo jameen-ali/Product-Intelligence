@@ -1,5 +1,6 @@
 import os
 from typing import Optional
+from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -23,12 +24,19 @@ class Settings(BaseSettings):
     OPENROUTER_MODEL: Optional[str] = "qwen/qwen-2.5-72b-instruct"
 
     # PostgreSQL
-    POSTGRES_URL: str = "postgresql://ipte:iptepass@localhost:5432/ipte_db"
+    POSTGRES_URL: str = Field(
+        default="postgresql://ipte:iptepass@localhost:5432/ipte_db",
+        validation_alias=AliasChoices("POSTGRES_URL", "DATABASE_URL")
+    )
 
     # Neo4j
     NEO4J_URI: str = "bolt://localhost:7687"
-    NEO4J_USERNAME: str = "neo4j"
+    NEO4J_USERNAME: str = Field(
+        default="neo4j",
+        validation_alias=AliasChoices("NEO4J_USERNAME", "NEO4J_USER")
+    )
     NEO4J_PASSWORD: str = "iptepassword"
+    NEO4J_DATABASE: str = "neo4j"
 
     # Qdrant
     QDRANT_URL: str = "http://localhost:6333"

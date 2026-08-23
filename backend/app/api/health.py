@@ -35,26 +35,44 @@ async def get_health():
         error=qdrant_res.get("error")
     )
 
-    # 4. Ollama
+    # 4 & 5. AI Providers (Environment-aware)
+    active_provider = settings.AI_PROVIDER.lower()
+    
     ollama_prov = OllamaProvider()
     ollama_res = await ollama_prov.check_health()
-    ollama_health = ComponentHealth(
-        status=ollama_res.get("status", "unhealthy"),
-        details={"provider": "ollama", "base_url": settings.OLLAMA_BASE_URL},
-        error=ollama_res.get("error")
-    )
-
-    # 5. OpenRouter (Optional)
+    
     openrouter_prov = OpenRouterProvider()
     openrouter_res = await openrouter_prov.check_health()
-    openrouter_health = ComponentHealth(
-        status=openrouter_res.get("status", "unconfigured"),
-        details={"provider": "openrouter", "configured": bool(settings.OPENROUTER_API_KEY)},
-        error=openrouter_res.get("error")
-    )
 
-    # Overall Status: Healthy if backend app is running. Warnings if services offline.
-    all_ok = all(h.status == "healthy" for h in [pg_health, neo_health, qdrant_health, ollama_health])
+    if active_provider == "openrouter":
+        openrouter_health = ComponentHealth(
+            status=openrouter_res.get("status", "unhealthy"),
+            details={"provider": "openrouter", "configured": bool(settings.OPENROUTER_API_KEY), "model": settings.OPENROUTER_MODEL},
+            error=openrouter_res.get("error")
+        )
+        ollama_health = ComponentHealth(
+            status="unconfigured",
+            details={"provider": "ollama", "base_url": settings.OLLAMA_BASE_URL, "active": False},
+            error="Ollama is inactive in production (AI_PROVIDER=openrouter)"
+        )
+        ai_ok = openrouter_health.status == "healthy"
+    else:
+        # Default: Ollama primary, with optional OpenRouter fallback
+        ollama_health = ComponentHealth(
+            status=ollama_res.get("status", "unhealthy"),
+            details={"provider": "ollama", "base_url": settings.OLLAMA_BASE_URL, "active": True},
+            error=ollama_res.get("error")
+        )
+        openrouter_health = ComponentHealth(
+            status=openrouter_res.get("status", "unconfigured"),
+            details={"provider": "openrouter", "configured": bool(settings.OPENROUTER_API_KEY)},
+            error=openrouter_res.get("error")
+        )
+        # AI is healthy if Ollama is healthy OR if OpenRouter fallback is healthy
+        ai_ok = (ollama_health.status == "healthy") or (bool(settings.OPENROUTER_API_KEY) and openrouter_health.status == "healthy")
+
+    # Overall Status: Healthy if active production dependencies are healthy
+    all_ok = pg_health.status == "healthy" and neo_health.status == "healthy" and qdrant_health.status == "healthy" and ai_ok
     overall_status = "healthy" if all_ok else "degraded"
 
     return HealthResponse(
