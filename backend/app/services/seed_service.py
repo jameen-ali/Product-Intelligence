@@ -132,50 +132,50 @@ def seed_demo_data(db: Session) -> None:
         claims_by_attr: Dict[str, list] = {}
 
         # 2. Add Sources, Documents, Claims, Evidence
-        sources_list: list = p_spec["sources"]
-        for s_spec in sources_list:
-            s_dict: dict = s_spec
-            source = Source(
-                product_id=product.id,
-                type=s_dict["type"],
-                name=s_dict["name"],
-                url_or_path=s_dict["url_or_path"],
-                authority_rank=s_dict["authority_rank"]
-            )
-            db.add(source)
-            db.commit()
-            db.refresh(source)
+        sources_raw = p_spec.get("sources", [])
+        if isinstance(sources_raw, list):
+            for s_dict in sources_raw:
+                source = Source(
+                    product_id=product.id,
+                    type=s_dict["type"],
+                    name=s_dict["name"],
+                    url_or_path=s_dict["url_or_path"],
+                    authority_rank=s_dict["authority_rank"]
+                )
+                db.add(source)
+                db.commit()
+                db.refresh(source)
 
-            graph.create_source_node(
-                uuid.UUID(str(source.id)),
-                uuid.UUID(str(product.id)),
-                str(s_dict["type"]),
-                str(s_dict["name"]),
-                int(s_dict.get("authority_rank", 5))
-            )
+                graph.create_source_node(
+                    uuid.UUID(str(source.id)),
+                    uuid.UUID(str(product.id)),
+                    str(s_dict["type"]),
+                    str(s_dict["name"]),
+                    int(s_dict.get("authority_rank", 5))
+                )
 
-            doc = Document(
-                source_id=source.id,
-                file_hash=uuid.uuid4().hex,
-                file_type=s_dict["type"],
-                content_length=1024,
-                parsed_metadata={"seeded": True}
-            )
-            db.add(doc)
-            db.commit()
-            db.refresh(doc)
+                doc = Document(
+                    source_id=source.id,
+                    file_hash=uuid.uuid4().hex,
+                    file_type=s_dict["type"],
+                    content_length=1024,
+                    parsed_metadata={"seeded": True}
+                )
+                db.add(doc)
+                db.commit()
+                db.refresh(doc)
 
-            graph.create_document_node(
-                uuid.UUID(str(doc.id)),
-                uuid.UUID(str(source.id)),
-                str(s_dict["name"]),
-                1,
-                str(doc.file_hash)
-            )
+                graph.create_document_node(
+                    uuid.UUID(str(doc.id)),
+                    uuid.UUID(str(source.id)),
+                    str(s_dict["name"]),
+                    1,
+                    str(doc.file_hash)
+                )
 
-            claims_list_spec: list = s_dict["claims"]
-            for c_spec_raw in claims_list_spec:
-                c_spec: dict = c_spec_raw
+                claims_raw = s_dict.get("claims", [])
+                if isinstance(claims_raw, list):
+                    for c_spec in claims_raw:
                 attr = attr_map.get(str(c_spec["attr"]))
                 if not attr:
                     continue
