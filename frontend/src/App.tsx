@@ -286,7 +286,8 @@ function DeleteProductModal({
       onDeleted(product.id);
       onClose();
     } catch (err: any) {
-      setError("Unable to delete product. Please try again.");
+      const msg = err?.message || "Unable to delete product. Please try again.";
+      setError(`Delete failed: ${msg}`);
     } finally {
       setDeleting(false);
     }
