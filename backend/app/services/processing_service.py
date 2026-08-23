@@ -151,16 +151,21 @@ async def process_pdf_for_product(
             product.manufacturer, product.category
         )
 
-    # --- 6. Extract claims block by block ---
+    # --- 6. Extract claims block by block (concurrent fast batching) ---
+    import asyncio
     all_candidates = []
-    for block in parsed.blocks:
-        if not block.text or len(block.text) < 20:
-            continue
-        candidates = await extract_attributes_from_block(block.text, block.page)
-        # Attach section context
-        for c in candidates:
-            c._section = block.section_header
-        all_candidates.extend(candidates)
+    valid_blocks = [b for b in parsed.blocks if b.text and len(b.text) >= 20]
+    
+    batch_size = 5
+    for i in range(0, len(valid_blocks), batch_size):
+        batch = valid_blocks[i:i + batch_size]
+        tasks = [extract_attributes_from_block(b.text, b.page) for b in batch]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for block, cand_list in zip(batch, results):
+            if isinstance(cand_list, list):
+                for c in cand_list:
+                    c._section = block.section_header
+                all_candidates.extend(cand_list)
 
     logger.info(f"Total raw candidates extracted: {len(all_candidates)}")
 

@@ -21,24 +21,33 @@ class QdrantWrapper:
     def __init__(self):
         self.client: Optional[QClient] = None
         self._unreachable: bool = False
+        self._last_fail_time: float = 0.0
 
     def connect(self):
         if not QDRANT_AVAILABLE:
             return
-        if not self.client:
-            try:
-                self.client = QClient(
-                    url=settings.QDRANT_URL,
-                    api_key=settings.QDRANT_API_KEY if settings.QDRANT_API_KEY else None,
-                    timeout=5.0
-                )
-                self.client.get_collections()
-                self._unreachable = False
-                logger.info(f"Connected to Qdrant at {settings.QDRANT_URL}")
-            except Exception as e:
-                logger.warning(f"Qdrant offline at {settings.QDRANT_URL}: {e}")
-                self.client = None
-                self._unreachable = True
+        if self.client:
+            return
+
+        import time
+        now = time.time()
+        if now - self._last_fail_time < 15.0:
+            return
+
+        try:
+            self.client = QClient(
+                url=settings.QDRANT_URL,
+                api_key=settings.QDRANT_API_KEY if settings.QDRANT_API_KEY else None,
+                timeout=2.0
+            )
+            self.client.get_collections()
+            self._unreachable = False
+            logger.info(f"Connected to Qdrant at {settings.QDRANT_URL}")
+        except Exception as e:
+            logger.warning(f"Qdrant offline at {settings.QDRANT_URL}: {e}")
+            self.client = None
+            self._unreachable = True
+            self._last_fail_time = now
 
     def check_health(self) -> Dict[str, Any]:
         if not QDRANT_AVAILABLE:

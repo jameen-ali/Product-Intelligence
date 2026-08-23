@@ -18,6 +18,7 @@ class Neo4jClient:
     def __init__(self):
         self._driver: Optional[Driver] = None
         self._last_error: Optional[str] = None
+        self._last_fail_time: float = 0.0
 
     def _get_session_kwargs(self) -> Dict[str, Any]:
         """Returns session kwargs. Omits database if set to 'neo4j' default for AuraDB compatibility."""
@@ -29,61 +30,69 @@ class Neo4jClient:
         if not NEO4J_AVAILABLE:
             self._last_error = "neo4j package not installed"
             return
-        if not self._driver:
-            uri = settings.NEO4J_URI
-            username = settings.NEO4J_USERNAME
-            password = settings.NEO4J_PASSWORD
+        if self._driver:
+            return
 
-            potential_users = []
-            if "." in uri and "databases.neo4j.io" in uri:
-                subdomain = uri.split("://")[-1].split(".")[0]
-                if subdomain:
-                    potential_users.append(subdomain)
-            if username and username not in potential_users:
-                potential_users.append(username)
-            if "neo4j" not in potential_users:
-                potential_users.append("neo4j")
+        now = time.time()
+        if now - self._last_fail_time < 15.0:
+            return
 
-            connected = False
-            last_exc = None
-            sess_kwargs = self._get_session_kwargs()
+        uri = settings.NEO4J_URI
+        username = settings.NEO4J_USERNAME
+        password = settings.NEO4J_PASSWORD
 
-            for user_candidate in potential_users:
-                schemes = [uri]
-                if uri.startswith("neo4j+s://"):
-                    schemes.append(uri.replace("neo4j+s://", "neo4j+ssc://"))
-                    schemes.append(uri.replace("neo4j+s://", "bolt+s://"))
-                    schemes.append(uri.replace("neo4j+s://", "bolt+ssc://"))
+        potential_users = []
+        if "." in uri and "databases.neo4j.io" in uri:
+            subdomain = uri.split("://")[-1].split(".")[0]
+            if subdomain:
+                potential_users.append(subdomain)
+        if username and username not in potential_users:
+            potential_users.append(username)
+        if "neo4j" not in potential_users and not potential_users:
+            potential_users.append("neo4j")
 
-                for scheme in schemes:
-                    driver = None
-                    try:
-                        driver = GraphDatabase.driver(
-                            scheme,
-                            auth=(user_candidate, password)
-                        )
-                        driver.verify_connectivity()
-                        with driver.session(**sess_kwargs) as s:
-                            s.run("RETURN 1 AS health")
-                        self._driver = driver
-                        connected = True
-                        self._last_error = None
-                        logger.info(f"Successfully connected to Neo4j at {scheme} with user '{user_candidate}'")
-                        break
-                    except Exception as err:
-                        last_exc = err
-                        if driver:
-                            try:
-                                driver.close()
-                            except Exception:
-                                pass
-                if connected:
+        connected = False
+        last_exc = None
+        sess_kwargs = self._get_session_kwargs()
+
+        for user_candidate in potential_users:
+            schemes = [uri]
+            if uri.startswith("neo4j+s://"):
+                schemes.append(uri.replace("neo4j+s://", "neo4j+ssc://"))
+                schemes.append(uri.replace("neo4j+s://", "bolt+s://"))
+                schemes.append(uri.replace("neo4j+s://", "bolt+ssc://"))
+
+            for scheme in schemes:
+                driver = None
+                try:
+                    driver = GraphDatabase.driver(
+                        scheme,
+                        auth=(user_candidate, password),
+                        connection_timeout=2.0
+                    )
+                    driver.verify_connectivity()
+                    with driver.session(**sess_kwargs) as s:
+                        s.run("RETURN 1 AS health")
+                    self._driver = driver
+                    connected = True
+                    self._last_error = None
+                    logger.info(f"Successfully connected to Neo4j at {scheme} with user '{user_candidate}'")
                     break
+                except Exception as err:
+                    last_exc = err
+                    if driver:
+                        try:
+                            driver.close()
+                        except Exception:
+                            pass
+            if connected:
+                break
 
-            if not connected:
-                self._last_error = f"Connection failed (candidates: {potential_users}): {last_exc}"
-                logger.warning(f"Neo4j connection failed at {uri}: {last_exc}")
-                self._driver = None
+        if not connected:
+            self._last_fail_time = now
+            self._last_error = f"Connection failed (candidates: {potential_users}): {last_exc}"
+            logger.warning(f"Neo4j connection failed at {uri}: {last_exc}")
+            self._driver = None
 
     def close(self):
         if self._driver:
