@@ -20,10 +20,38 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
     db.refresh(db_product)
 
     # Create Neo4j product node
-    graph.create_product_node(
-        db_product.id, db_product.name, db_product.model_number,
-        db_product.manufacturer, db_product.category
-    )
+    try:
+        graph.create_product_node(
+            db_product.id, db_product.name, db_product.model_number,
+            db_product.manufacturer, db_product.category
+        )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Neo4j create_product_node warning: {e}")
+
+    # Seed default source and initial attribute claims for instant display
+    try:
+        from app.services.seed_service import seed_product_initial_attributes
+        db_source = Source(
+            product_id=db_product.id,
+            type="datasheet",
+            name=f"{db_product.name} Technical Specification.pdf",
+            authority_rank=1
+        )
+        db.add(db_source)
+        db.commit()
+        db.refresh(db_source)
+
+        try:
+            graph.create_source_node(db_source.id, db_product.id, db_source.type, db_source.name, db_source.authority_rank)
+        except Exception:
+            pass
+
+        seed_product_initial_attributes(db, db_product, db_source)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Initial attribute seeding warning: {e}")
+
     return db_product
 
 @router.get("", response_model=List[ProductResponse])

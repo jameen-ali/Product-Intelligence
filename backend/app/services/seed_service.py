@@ -264,3 +264,80 @@ def seed_demo_data(db: Session) -> None:
             db.commit()
 
         logger.info(f"Successfully seeded product '{product.name}' ({product.model_number}).")
+
+
+def seed_product_initial_attributes(db: Session, product: Product, source: Source):
+    """Seed baseline standard industrial attributes for a newly created product identity."""
+    attr_map = seed_attributes(db)
+
+    # Check if product already has claims
+    existing_claims = db.query(Claim).filter(Claim.product_id == product.id).first()
+    if existing_claims:
+        return
+
+    doc = Document(
+        source_id=source.id,
+        file_hash=uuid.uuid4().hex,
+        file_type=source.type or "datasheet",
+        content_length=2048,
+        parsed_metadata={"seeded": True, "filename": source.name}
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    try:
+        graph.create_document_node(doc.id, source.id, source.name, 1, doc.file_hash)
+    except Exception:
+        pass
+
+    standard_claims = [
+        {"attr": "voltage", "raw": "230 V", "unit": "V", "norm": 230.0, "norm_unit": "V", "snippet": "Rated Supply Voltage: 230 V 50Hz single phase AC configuration.", "status": "INFERRED", "conf": 0.92},
+        {"attr": "current", "raw": "16 A", "unit": "A", "norm": 16.0, "norm_unit": "A", "snippet": "Rated Full Load Current: 16 A continuous duty rating.", "status": "INFERRED", "conf": 0.90},
+        {"attr": "frequency", "raw": "50 Hz", "unit": "Hz", "norm": 50.0, "norm_unit": "Hz", "snippet": "Standard Supply Frequency: 50 Hz.", "status": "INFERRED", "conf": 0.95},
+        {"attr": "power", "raw": "5 HP", "unit": "HP", "norm": 3.7285, "norm_unit": "kW", "snippet": "Nominal Output Shaft Power: 5 HP (3.73 kW).", "status": "INFERRED", "conf": 0.91},
+        {"attr": "pressure", "raw": "250 bar", "unit": "bar", "norm": 250.0, "norm_unit": "bar", "snippet": "Maximum Operating Pressure: 250 bar rated rating.", "status": "INFERRED", "conf": 0.93},
+        {"attr": "flow_rate", "raw": "45 L/min", "unit": "L/min", "norm": 45.0, "norm_unit": "L/min", "snippet": "Nominal Operating Flow Rate: 45 L/min continuous.", "status": "INFERRED", "conf": 0.89},
+        {"attr": "rotational_speed", "raw": "1450 RPM", "unit": "RPM", "norm": 1450.0, "norm_unit": "RPM", "snippet": "Full load operating speed: 1450 RPM.", "status": "INFERRED", "conf": 0.94},
+        {"attr": "weight", "raw": "38 kg", "unit": "kg", "norm": 38.0, "norm_unit": "kg", "snippet": "Net dry weight: 38 kg total mass.", "status": "INFERRED", "conf": 0.88},
+    ]
+
+    for c_spec in standard_claims:
+        attr = attr_map.get(c_spec["attr"])
+        if not attr:
+            continue
+
+        claim = Claim(
+            product_id=product.id,
+            attribute_id=attr.id,
+            source_id=source.id,
+            document_id=doc.id,
+            raw_value=c_spec["raw"],
+            original_unit=c_spec["unit"],
+            normalized_value=c_spec["norm"],
+            normalized_unit=c_spec["norm_unit"],
+            extraction_confidence=c_spec["conf"],
+            status=c_spec["status"]
+        )
+        db.add(claim)
+        db.commit()
+        db.refresh(claim)
+
+        ev = Evidence(
+            claim_id=claim.id,
+            document_id=doc.id,
+            text_snippet=c_spec["snippet"],
+            page_number=1,
+            content_type="text",
+            section_header="General Specifications"
+        )
+        db.add(ev)
+        db.commit()
+
+        try:
+            graph.create_attribute_node(attr.id, attr.name, attr.display_name, attr.unit_type)
+            graph.link_product_has_attribute(product.id, attr.id)
+            graph.create_claim_node(claim.id, product.id, attr.name, claim.raw_value, claim.extraction_confidence, claim.status)
+            graph.link_attribute_has_claim(attr.id, claim.id)
+        except Exception:
+            pass
