@@ -22,7 +22,7 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
     # Create Neo4j product node
     try:
         graph.create_product_node(
-            db_product.id, db_product.name, db_product.model_number,
+            db_product.id, str(db_product.name), db_product.model_number,
             db_product.manufacturer, db_product.category
         )
     except Exception as e:
@@ -43,7 +43,7 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
         db.refresh(db_source)
 
         try:
-            graph.create_source_node(db_source.id, db_product.id, db_source.type, db_source.name, db_source.authority_rank)
+            graph.create_source_node(db_source.id, db_product.id, str(db_source.type), str(db_source.name), int(db_source.authority_rank or 1))
         except Exception:
             pass
 
@@ -114,9 +114,12 @@ def add_source(product_id: UUID, source: SourceCreate, db: Session = Depends(get
     db.refresh(db_source)
 
     # Create Neo4j source node
-    graph.create_source_node(
-        db_source.id, product_id, source.type, source.name, db_source.authority_rank
-    )
+    try:
+        graph.create_source_node(
+            db_source.id, product_id, source.type, source.name, int(db_source.authority_rank or 5)
+        )
+    except Exception:
+        pass
     return db_source
 
 @router.get("/{product_id}/sources", response_model=List[SourceResponse])

@@ -335,9 +335,17 @@ def seed_product_initial_attributes(db: Session, product: Product, source: Sourc
         db.commit()
 
         try:
-            graph.create_attribute_node(attr.id, attr.name, attr.display_name, attr.unit_type)
+            graph.create_attribute_node(attr.id, str(attr.name), str(attr.display_name), attr.unit_type)
             graph.link_product_has_attribute(product.id, attr.id)
-            graph.create_claim_node(claim.id, product.id, attr.name, claim.raw_value, claim.extraction_confidence, claim.status)
-            graph.link_attribute_has_claim(attr.id, claim.id)
+            graph.create_claim_node(
+                claim_id=claim.id,
+                attribute_id=attr.id,
+                raw_value=str(claim.raw_value),
+                raw_unit=claim.original_unit,
+                normalized_value=claim.normalized_value,
+                normalized_unit=claim.normalized_unit,
+                status=str(claim.status),
+                extraction_confidence=float(claim.extraction_confidence or 0.9)
+            )
         except Exception:
             pass
