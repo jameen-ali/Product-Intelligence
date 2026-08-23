@@ -1381,22 +1381,28 @@ export default function App() {
                 ↻
               </button>
             </div>
-            {["postgresql", "neo4j", "qdrant", "ollama"].map(svc => {
-              const status = svcStatus(svc);
-              const isOk = status === "healthy";
-              const isWarn = status === "unhealthy";
-              return (
-                <div key={svc} className="flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400 capitalize font-medium">{svc}</span>
-                  <div className="flex items-center gap-1.5">
-                    <div className={`w-1.5 h-1.5 rounded-full ${isOk ? "bg-emerald-400" : isWarn ? "bg-rose-400" : "bg-amber-400"}`} />
-                    <span className={`text-[10px] font-mono font-bold uppercase ${isOk ? "text-emerald-400" : isWarn ? "text-rose-400" : "text-amber-400"}`}>
-                      {healthLoading ? "..." : status || "OK"}
-                    </span>
+            {Object.keys(health?.services || { postgresql: {}, neo4j: {}, qdrant: {}, openrouter: {} })
+              .filter(svc => {
+                const status = svcStatus(svc);
+                return status && status !== "unconfigured";
+              })
+              .map(svc => {
+                const status = svcStatus(svc);
+                const isOk = status === "healthy";
+                const isWarn = status === "unhealthy";
+                const displayName = svc === "postgresql" ? "Postgresql" : svc === "neo4j" ? "Neo4j" : svc === "openrouter" ? "OpenRouter" : svc;
+                return (
+                  <div key={svc} className="flex items-center justify-between">
+                    <span className="text-[11px] text-slate-400 capitalize font-medium">{displayName}</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className={`w-1.5 h-1.5 rounded-full ${isOk ? "bg-emerald-400" : isWarn ? "bg-rose-400" : "bg-amber-400"}`} />
+                      <span className={`text-[10px] font-mono font-bold uppercase ${isOk ? "text-emerald-400" : isWarn ? "text-rose-400" : "text-amber-400"}`}>
+                        {healthLoading ? "..." : status || "OK"}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         </div>
       </aside>
