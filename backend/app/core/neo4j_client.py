@@ -49,6 +49,8 @@ class Neo4jClient:
                 schemes = [uri]
                 if uri.startswith("neo4j+s://"):
                     schemes.append(uri.replace("neo4j+s://", "neo4j+ssc://"))
+                    schemes.append(uri.replace("neo4j+s://", "bolt+s://"))
+                    schemes.append(uri.replace("neo4j+s://", "bolt+ssc://"))
 
                 for scheme in schemes:
                     try:
