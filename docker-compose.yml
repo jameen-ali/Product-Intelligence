@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ipte_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ipte
+      POSTGRES_PASSWORD: iptepass
+      POSTGRES_DB: ipte_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: ipte_neo4j
+    restart: always
+    environment:
+      NEO4J_AUTH: neo4j/iptepassword
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "7474:7474" # HTTP Web Interface
+      - "7687:7687" # Bolt Protocol
+    volumes:
+      - neo4j_data:/data
+
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    container_name: ipte_qdrant
+    restart: always
+    ports:
+      - "6333:6333" # REST API
+      - "6334:6334" # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  qdrant_data:
