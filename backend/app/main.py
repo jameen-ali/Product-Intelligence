@@ -23,17 +23,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Could not initialize PostgreSQL tables: {e}")
 
-    # Seed core attributes
+    # Seed core attributes and demonstration products
     try:
-        from app.services.processing_service import seed_attributes
+        from app.services.seed_service import seed_demo_data
         db = SessionLocal()
         try:
-            seed_attributes(db)
-            logger.info("Core attributes seeded.")
+            seed_demo_data(db)
+            logger.info("Core attributes and demonstration products seeded.")
         finally:
             db.close()
     except Exception as e:
-        logger.warning(f"Could not seed attributes: {e}")
+        logger.warning(f"Could not seed demo data: {e}")
 
     # Ensure Qdrant collection exists
     try:
