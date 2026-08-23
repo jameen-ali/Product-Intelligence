@@ -102,20 +102,23 @@ def seed_demo_data(db: Session) -> None:
     for p_spec in DEMO_PRODUCTS:
         existing = db.query(Product).filter(Product.model_number == p_spec["model_number"]).first()
         if existing:
-            logger.info(f"Product '{p_spec['model_number']}' already exists. Skipping seed.")
-            continue
-
-        # 1. Create Product
-        product = Product(
-            name=p_spec["name"],
-            model_number=p_spec["model_number"],
-            manufacturer=p_spec["manufacturer"],
-            category=p_spec["category"],
-            description=f"Industrial grade {p_spec['category']} for enterprise manufacturing applications."
-        )
-        db.add(product)
-        db.commit()
-        db.refresh(product)
+            has_claims = db.query(Claim).filter(Claim.product_id == existing.id).count() > 0
+            if has_claims:
+                logger.info(f"Product '{p_spec['model_number']}' already has claims. Skipping seed.")
+                continue
+            product = existing
+        else:
+            # 1. Create Product
+            product = Product(
+                name=p_spec["name"],
+                model_number=p_spec["model_number"],
+                manufacturer=p_spec["manufacturer"],
+                category=p_spec["category"],
+                description=f"Industrial grade {p_spec['category']} for enterprise manufacturing applications."
+            )
+            db.add(product)
+            db.commit()
+            db.refresh(product)
 
         # Graph node
         graph.create_product_node(
@@ -157,6 +160,9 @@ def seed_demo_data(db: Session) -> None:
                 if not attr:
                     continue
 
+                graph.create_attribute_node(attr.id, attr.name, attr.display_name, attr.unit_type)
+                graph.link_product_has_attribute(product.id, attr.id)
+
                 claim = Claim(
                     product_id=product.id,
                     attribute_id=attr.id,
@@ -191,6 +197,10 @@ def seed_demo_data(db: Session) -> None:
                 db.commit()
                 db.refresh(ev)
 
+                graph.create_evidence_node(
+                    ev.id, claim.id, doc.id, ev.text_snippet, ev.page_number, ev.section_header
+                )
+
                 # Index in Qdrant if available
                 try:
                     import asyncio
@@ -205,15 +215,14 @@ def seed_demo_data(db: Session) -> None:
 
                     upsert_evidence(
                         evidence_id=str(ev.id),
-                        vector=vec,
-                        payload={
-                            "product_id": str(product.id),
-                            "source_id": str(source.id),
-                            "claim_id": str(claim.id),
-                            "attribute_name": attr.name,
-                            "raw_value": claim.raw_value,
-                            "text_snippet": ev.text_snippet
-                        }
+                        embedding=vec,
+                        product_id=str(product.id),
+                        document_id=str(doc.id),
+                        source_id=str(source.id),
+                        claim_id=str(claim.id),
+                        page=1,
+                        attribute=attr.name,
+                        text_snippet=ev.text_snippet
                     )
                 except Exception as q_err:
                     logger.warning(f"Could not index evidence in Qdrant: {q_err}")
@@ -253,11 +262,5 @@ def seed_demo_data(db: Session) -> None:
             )
             db.add(decision)
             db.commit()
-            db.refresh(decision)
-
-            graph.create_truth_attribute_node(
-                decision.id, product.id, attr.id,
-                canonical_val, canonical_unit, trust_status, conf_score, reason
-            )
 
         logger.info(f"Successfully seeded product '{product.name}' ({product.model_number}).")

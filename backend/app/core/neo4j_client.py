@@ -31,10 +31,6 @@ class Neo4jClient:
             self._last_error = "neo4j package not installed"
             return
         if not self._driver:
-            now = time.time()
-            if now - self._last_attempt < 2.0:
-                return
-            self._last_attempt = now
             uri = settings.NEO4J_URI
             username = settings.NEO4J_USERNAME
             password = settings.NEO4J_PASSWORD
