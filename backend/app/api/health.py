@@ -11,7 +11,7 @@ router = APIRouter()
 
 @router.get("/health")
 async def get_health():
-    commit_tag = "commit-8b3672f-v2"
+    commit_tag = "commit-a34324b-v3"
     # 1. PostgreSQL
     pg_res = check_postgres_connection()
     pg_health = ComponentHealth(
