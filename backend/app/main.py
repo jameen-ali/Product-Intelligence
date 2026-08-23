@@ -1,3 +1,4 @@
+# Trigger Render auto-deploy for DELETE endpoint v3
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
